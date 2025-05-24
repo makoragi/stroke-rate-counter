@@ -3,7 +3,7 @@
 ローイング競技観戦用のストロークレート測定アプリ
 
 ## 🚀 デプロイURL
-https://[username].github.io/stroke-rate-counter/
+https://makoragi.github.io/stroke-rate-counter/
 
 ## 📱 機能
 - リアルタイムストロークレート測定（SPM）
