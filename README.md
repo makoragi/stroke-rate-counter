@@ -1,0 +1,1 @@
+# stroke-rate-counter
