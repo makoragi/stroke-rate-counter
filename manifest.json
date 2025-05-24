@@ -1,0 +1,16 @@
+{
+  "name": "Stroke Rate Counter",
+  "short_name": "SRC",
+  "description": "Professional stroke rate counter for rowing",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#1f2937",
+  "theme_color": "#1f2937",
+  "icons": [
+    {
+      "src": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTkyIiBoZWlnaHQ9IjE5MiIgdmlld0JveD0iMCAwIDE5MiAxOTIiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxyZWN0IHdpZHRoPSIxOTIiIGhlaWdodD0iMTkyIiByeD0iMjQiIGZpbGw9IiMxZjI5MzciLz4KPHN2ZyB4PSI0OCIgeT0iNDgiIHdpZHRoPSI5NiIgaGVpZ2h0PSI5NiIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IndoaXRlIiBzdHJva2Utd2lkdGg9IjIiPgo8cGF0aCBkPSJNOSAxOXYtNmEyIDIgMCAwIDAtMi0ySDVhMiAyIDAgMCAwLTIgMnY2YTIgMiAwIDAgMCAyIDJoMmEyIDIgMCAwIDAgMi0yem0wIDBWOWEyIDIgMCAwIDEgMi0yaDJhMiAyIDAgMCAxIDIgMnYxMG0tNiAwYTIgMiAwIDAgMCAyIDJoMmEyIDIgMCAwIDAgMi0ybTAgMFY1YTIgMiAwIDAgMSAyLTJoMmEyIDIgMCAwIDEgMiAydjE0YTIgMiAwIDAgMS0yIDJoLTJhMiAyIDAgMCAxLTItMnoiLz4KPC9zdmc+Cjwvc3ZnPgo=",
+      "sizes": "192x192",
+      "type": "image/svg+xml"
+    }
+  ]
+}

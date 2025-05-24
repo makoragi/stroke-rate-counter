@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stroke Rate Counter</title>
+    <meta name="description" content="Professional stroke rate counter for rowing">
+    <meta name="theme-color" content="#1f2937">
+    <link rel="manifest" href="./manifest.json">
+    <link rel="icon" href="./favicon.ico">
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- React -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body>
+    <div id="root"></div>
+    
+    <script type="text/babel">
+        const { useState, useCallback, useEffect } = React;
+
+        // 定数
+        const CHATTER_THRESHOLD = 500;
+        const CLEANUP_THRESHOLD = 10000;
+        const INACTIVE_THRESHOLD = 10000;
+
+        // メインコンポーネント
+        const StrokeRateCounter = () => {
+            const [taps, setTaps] = useState([]);
+            const [currentRate, setCurrentRate] = useState(0);
+            const [lastTapTime, setLastTapTime] = useState(null);
+            const [isActive, setIsActive] = useState(false);
+            const [debugInfo, setDebugInfo] = useState('');
+            const [ignoredTaps, setIgnoredTaps] = useState(0);
+            const [rateHistory, setRateHistory] = useState([]);
+            const [showDebug, setShowDebug] = useState(false);
+            const [showHistory, setShowHistory] = useState(false);
+            const [showStats, setShowStats] = useState(false);
+            const [soundEnabled, setSoundEnabled] = useState(true);
+
+            // 古いタップをクリーンアップ
+            const cleanupTaps = useCallback((currentTime, tapArray) => {
+                return tapArray.filter(tapTime => currentTime - tapTime < CLEANUP_THRESHOLD);
+            }, []);
+
+            // レート計算
+            const calculateRate = useCallback((tapArray) => {
+                if (tapArray.length < 2) return 0;
+                
+                const currentTime = Date.now();
+                const recentTaps = cleanupTaps(currentTime, tapArray);
+                
+                if (recentTaps.length < 2) return 0;
+                
+                const sampleSize = Math.min(6, recentTaps.length);
+                const recentSamples = recentTaps.slice(-sampleSize);
+                
+                let totalInterval = 0;
+                const intervals = [];
+                for (let i = 1; i < recentSamples.length; i++) {
+                    const interval = recentSamples[i] - recentSamples[i - 1];
+                    totalInterval += interval;
+                    intervals.push(interval);
+                }
+                
+                const averageInterval = totalInterval / (recentSamples.length - 1);
+                const ratePerMinute = (60 * 1000) / averageInterval;
+                
+                const minInterval = Math.min(...intervals);
+                const maxInterval = Math.max(...intervals);
+                setDebugInfo(`間隔: ${intervals.map(i => `${Math.round(i/1000*10)/10}s`).join(', ')} | 平均: ${Math.round(averageInterval/1000*10)/10}s (${Math.round(minInterval/1000*10)/10}-${Math.round(maxInterval/1000*10)/10}s)`);
+                
+                return Math.round(ratePerMinute);
+            }, [cleanupTaps]);
+
+            // 音声再生
+            const playTapSound = useCallback(async () => {
+                if (!soundEnabled) return;
+                
+                try {
+                    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    
+                    if (audioContext.state === 'suspended') {
+                        await audioContext.resume();
+                    }
+                    
+                    const oscillator = audioContext.createOscillator();
+                    const gainNode = audioContext.createGain();
+                    
+                    oscillator.connect(gainNode);
+                    gainNode.connect(audioContext.destination);
+                    
+                    oscillator.frequency.setValueAtTime(800, audioContext.currentTime);
+                    oscillator.type = 'sine';
+                    
+                    gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
+                    gainNode.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + 0.1);
+                    
+                    oscillator.start();
+                    oscillator.stop(audioContext.currentTime + 0.1);
+                } catch (error) {
+                    console.log('Audio not supported:', error);
+                }
+            }, [soundEnabled]);
+
+            // タップハンドラー
+            const handleTap = useCallback(() => {
+                const now = Date.now();
+                
+                if (lastTapTime && now - lastTapTime < CHATTER_THRESHOLD) {
+                    setIgnoredTaps(prev => prev + 1);
+                    return;
+                }
+                
+                playTapSound();
+                
+                setTaps(prevTaps => {
+                    const newTaps = [...prevTaps, now];
+                    const rate = calculateRate(newTaps);
+                    setCurrentRate(rate);
+                    
+                    if (rate > 0) {
+                        const timestamp = new Date(now);
+                        setRateHistory(prev => {
+                            const newHistory = [...prev, { 
+                                rate, 
+                                time: timestamp.toLocaleTimeString('ja-JP', { 
+                                    hour: '2-digit', 
+                                    minute: '2-digit', 
+                                    second: '2-digit' 
+                                }),
+                                timestamp: now
+                            }];
+                            return newHistory.slice(-50);
+                        });
+                    }
+                    
+                    return cleanupTaps(now, newTaps);
+                });
+                
+                setLastTapTime(now);
+                setIsActive(true);
+            }, [lastTapTime, playTapSound, calculateRate, cleanupTaps]);
+
+            // 非アクティブ状態の監視
+            useEffect(() => {
+                if (!lastTapTime) return;
+                
+                const timer = setInterval(() => {
+                    const now = Date.now();
+                    if (now - lastTapTime > INACTIVE_THRESHOLD) {
+                        setIsActive(false);
+                        setCurrentRate(0);
+                    }
+                }, 100);
+                
+                return () => clearInterval(timer);
+            }, [lastTapTime]);
+
+            // リセット
+            const handleReset = useCallback(() => {
+                setTaps([]);
+                setCurrentRate(0);
+                setLastTapTime(null);
+                setIsActive(false);
+                setIgnoredTaps(0);
+                setRateHistory([]);
+            }, []);
+
+            // 統計計算
+            const getStats = useCallback(() => {
+                if (rateHistory.length < 2) return null;
+                
+                const rates = rateHistory.map(entry => entry.rate);
+                const avg = Math.round(rates.reduce((sum, rate) => sum + rate, 0) / rates.length);
+                const min = Math.min(...rates);
+                const max = Math.max(...rates);
+                const latest5 = rates.slice(-5);
+                const recent = latest5.length > 0 ? Math.round(latest5.reduce((sum, rate) => sum + rate, 0) / latest5.length) : 0;
+                
+                return { avg, min, max, recent };
+            }, [rateHistory]);
+
+            // 背景色
+            const getBackgroundClass = () => {
+                if (taps.length === 0) return 'from-gray-700 via-gray-600 to-gray-500';
+                return isActive 
+                    ? 'from-green-800 via-green-700 to-green-600'
+                    : 'from-amber-800 via-amber-700 to-amber-600';
+            };
+
+            return (
+                <div className={`w-full h-screen flex text-white overflow-hidden select-none transition-all duration-500 bg-gradient-to-br ${getBackgroundClass()}`}>
+                    {/* メインエリア */}
+                    <div className="flex-1 flex flex-col items-center justify-center relative">
+                        {/* ヘッダー */}
+                        <header className="absolute top-4 left-4 right-16 text-center">
+                            <h1 className="text-xl font-bold opacity-80">Stroke Rate Counter</h1>
+                        </header>
+                        
+                        {/* 統計パネル */}
+                        {showStats && (() => {
+                            const stats = getStats();
+                            return (
+                                <div className="absolute top-20 left-4 bg-black bg-opacity-40 backdrop-blur-sm rounded-lg p-3">
+                                    <h3 className="text-sm font-semibold mb-2 opacity-80">統計情報</h3>
+                                    {stats ? (
+                                        <div className="space-y-1 text-xs">
+                                            <div className="flex justify-between">
+                                                <span className="opacity-70">平均:</span>
+                                                <span className="font-mono">{stats.avg} SPM</span>
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <span className="opacity-70">最近5回:</span>
+                                                <span className="font-mono">{stats.recent} SPM</span>
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <span className="opacity-70">最高:</span>
+                                                <span className="font-mono">{stats.max} SPM</span>
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <span className="opacity-70">最低:</span>
+                                                <span className="font-mono">{stats.min} SPM</span>
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <span className="opacity-70">変動:</span>
+                                                <span className="font-mono">{stats.max - stats.min} SPM</span>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div className="text-xs opacity-60">データ不足</div>
+                                    )}
+                                </div>
+                            );
+                        })()}
+                        
+                        {/* レート表示 */}
+                        <div className="flex-1 flex flex-col items-center justify-center">
+                            <div className={`transition-all duration-300 ${isActive ? 'scale-100 opacity-100' : 'scale-95 opacity-70'}`}>
+                                <div className="text-center mb-4">
+                                    <div className="text-8xl md:text-9xl font-bold mb-2 leading-none">
+                                        {currentRate}
+                                    </div>
+                                    <div className="text-2xl md:text-3xl font-medium opacity-80">
+                                        SPM
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            {/* ステータス表示 */}
+                            <div className="text-center mb-8">
+                                {taps.length === 0 && (
+                                    <p className="text-lg opacity-60">画面をタップしてレートを測定</p>
+                                )}
+                                {taps.length === 1 && (
+                                    <p className="text-lg opacity-60">もう一度タップ...</p>
+                                )}
+                                {showDebug && isActive && taps.length > 1 && (
+                                    <div className="space-y-2">
+                                        <div className="flex items-center justify-center space-x-2">
+                                            <p className="text-lg">測定中 ({taps.length}タップ)</p>
+                                        </div>
+                                        {debugInfo && (
+                                            <p className="text-sm opacity-60 font-mono">{debugInfo}</p>
+                                        )}
+                                        {ignoredTaps > 0 && (
+                                            <p className="text-xs opacity-50">無視されたタップ: {ignoredTaps}回</p>
+                                        )}
+                                    </div>
+                                )}
+                                {showDebug && !isActive && taps.length > 1 && (
+                                    <p className="text-lg opacity-60">タップを再開してください（10秒でリセット）</p>
+                                )}
+                            </div>
+                        </div>
+                        
+                        {/* コントロールボタン群 */}
+                        <div className="absolute top-4 right-4 flex flex-col space-y-2">
+                            {/* 音声切り替え */}
+                            <button
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSoundEnabled(!soundEnabled);
+                                }}
+                                className={`p-2 rounded-lg transition-all duration-200 ${
+                                    soundEnabled 
+                                        ? 'bg-white bg-opacity-30 text-white' 
+                                        : 'bg-white bg-opacity-10 text-white text-opacity-60'
+                                }`}
+                                title="タップ音切り替え"
+                            >
+                                {soundEnabled ? '🔊' : '🔇'}
+                            </button>
+                            
+                            {/* 統計切り替え */}
+                            <button
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setShowStats(!showStats);
+                                }}
+                                className={`p-2 rounded-lg transition-all duration-200 ${
+                                    showStats 
+                                        ? 'bg-white bg-opacity-30 text-white' 
+                                        : 'bg-white bg-opacity-10 text-white text-opacity-60'
+                                }`}
+                                title="統計情報切り替え"
+                            >
+                                📊
+                            </button>
+                            
+                            {/* 履歴切り替え */}
+                            <button
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setShowHistory(!showHistory);
+                                }}
+                                className={`p-2 rounded-lg transition-all duration-200 ${
+                                    showHistory 
+                                        ? 'bg-white bg-opacity-30 text-white' 
+                                        : 'bg-white bg-opacity-10 text-white text-opacity-60'
+                                }`}
+                                title="履歴表示切り替え"
+                            >
+                                📋
+                            </button>
+                            
+                            {/* デバッグ切り替え */}
+                            <button
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setShowDebug(!showDebug);
+                                }}
+                                className={`p-2 rounded-lg transition-all duration-200 ${
+                                    showDebug 
+                                        ? 'bg-white bg-opacity-30 text-white' 
+                                        : 'bg-white bg-opacity-10 text-white text-opacity-60'
+                                }`}
+                                title="デバッグ情報切り替え"
+                            >
+                                ⚙️
+                            </button>
+                        </div>
+                        
+                        {/* リセットボタン */}
+                        <div className="absolute bottom-4 right-4">
+                            <button
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleReset();
+                                }}
+                                className="bg-white bg-opacity-20 hover:bg-opacity-30 rounded-full p-3 transition-all duration-200"
+                                title="リセット"
+                            >
+                                🔄
+                            </button>
+                        </div>
+                        
+                        {/* タップエリア */}
+                        <div 
+                            className="absolute inset-0 cursor-pointer"
+                            onClick={handleTap}
+                            onTouchStart={(e) => {
+                                e.preventDefault();
+                                handleTap();
+                            }}
+                        />
+                        
+                        {/* 説明テキスト */}
+                        {showDebug && (
+                            <div className="absolute bottom-4 left-4 text-sm opacity-60">
+                                <p>右下のボタンでリセット</p>
+                                <p>0.5秒以内の連続タップは無視</p>
+                            </div>
+                        )}
+                    </div>
+                    
+                    {/* 履歴サイドバー */}
+                    {showHistory && (
+                        <div className="w-32 bg-black bg-opacity-30 backdrop-blur-sm border-l border-white border-opacity-20 flex flex-col">
+                            <div className="p-2 border-b border-white border-opacity-20">
+                                <h2 className="text-sm font-semibold">
+                                    履歴
+                                    {rateHistory.length > 0 && (
+                                        <span className="text-xs opacity-60 block">({rateHistory.length})</span>
+                                    )}
+                                </h2>
+                            </div>
+                            <div className="flex-1 overflow-y-auto p-1">
+                                {rateHistory.length === 0 ? (
+                                    <div className="text-center text-opacity-60 text-white mt-4">
+                                        <p className="text-xs">履歴なし</p>
+                                    </div>
+                                ) : (
+                                    <div className="space-y-1">
+                                        {[...rateHistory].reverse().map((entry, index) => (
+                                            <div 
+                                                key={entry.timestamp} 
+                                                className={`p-1 rounded bg-white bg-opacity-10 text-center
+                                                    ${index === 0 ? 'ring-1 ring-yellow-400 ring-opacity-50' : ''}
+                                                `}
+                                            >
+                                                <div className="text-lg font-bold">{entry.rate}</div>
+                                                <div className="text-xs opacity-80">{entry.time.slice(-8, -3)}</div>
+                                                {index === 0 && (
+                                                    <div className="text-xs text-yellow-400">●</div>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        // アプリケーション開始
+        ReactDOM.render(<StrokeRateCounter />, document.getElementById('root'));
+    </script>
+</body>
+</html>
